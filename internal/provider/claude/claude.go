@@ -75,9 +75,10 @@ func (p *Provider) Name() string {
 func callClaudeCLI(workDir, prompt, model, disallowedTools string) (*CLIResult, error) {
 	// Build command arguments
 	args := []string{"-p", "--output-format", "json"}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
+	// Always use default model - don't pass --model parameter
+	// if model != "" {
+	//	args = append(args, "--model", model)
+	// }
 	// Add disallowed tools if specified
 	if disallowedTools != "" {
 		args = append(args, "--disallowedTools", disallowedTools)
@@ -150,7 +151,7 @@ func (p *Provider) GenerateCode(ctx context.Context, req *CodeRequest) (*CodeRes
 	// 3. Build full prompt with system and user content
 	fullPrompt := fmt.Sprintf("System: %s\n\nUser: %s", systemPrompt, promptManager.BuildUserPrompt(req.Prompt))
 
-	log.Printf("[Claude] Calling Claude CLI with model: %s in directory: %s", p.model, req.RepoPath)
+	log.Printf("[Claude] Calling Claude CLI with default model in directory: %s", req.RepoPath)
 
 	// 4. Get disallowed tools from context
 	disallowedTools := ""
