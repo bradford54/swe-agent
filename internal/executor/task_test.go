@@ -692,6 +692,7 @@ func TestHandleResponseOnly(t *testing.T) {
 type mockAppAuth struct {
 	GetInstallationTokenFunc func(repo string) (*github.InstallationToken, error)
 	GetInstallationOwnerFunc func(repo string) (string, error)
+	CheckUserPermissionFunc  func(repo, username string) (bool, error)
 }
 
 func (m *mockAppAuth) GetInstallationToken(repo string) (*github.InstallationToken, error) {
@@ -709,6 +710,14 @@ func (m *mockAppAuth) GetInstallationOwner(repo string) (string, error) {
 		return m.GetInstallationOwnerFunc(repo)
 	}
 	return "mock-owner", nil
+}
+
+func (m *mockAppAuth) CheckUserPermission(repo, username string) (bool, error) {
+	if m.CheckUserPermissionFunc != nil {
+		return m.CheckUserPermissionFunc(repo, username)
+	}
+	// Default behavior: allow all users (for backward compatibility)
+	return true, nil
 }
 
 func TestExecutor_Execute_SuccessWithFileChanges(t *testing.T) {

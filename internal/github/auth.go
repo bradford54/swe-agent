@@ -16,6 +16,7 @@ import (
 type AuthProvider interface {
 	GetInstallationToken(repo string) (*InstallationToken, error)
 	GetInstallationOwner(repo string) (string, error)
+	CheckUserPermission(repo, username string) (bool, error)
 }
 
 // AppAuth holds GitHub App authentication configuration
@@ -212,4 +213,77 @@ func (a *AppAuth) getInstallationAccountLogin(jwtToken string, installationID in
 	}
 
 	return result.Account.Login, nil
+}
+
+// CheckUserPermission checks if a user has write permission to a repository
+func (a *AppAuth) CheckUserPermission(repo, username string) (bool, error) {
+	// 1. Generate JWT
+	jwtToken, err := a.GenerateJWT()
+	if err != nil {
+		return false, err
+	}
+
+	// 2. Get installation ID for the repository
+	installationID, err := a.getInstallationID(jwtToken, repo)
+	if err != nil {
+		return false, err
+	}
+
+	// 3. Get installation access token
+	installationToken, err := a.getInstallationAccessToken(jwtToken, installationID)
+	if err != nil {
+		return false, err
+	}
+
+	// 4. Check user permission using GitHub API
+	return a.checkUserRepositoryPermission(installationToken.Token, repo, username)
+}
+
+// checkUserRepositoryPermission checks if a user has write permission to a repository
+func (a *AppAuth) checkUserRepositoryPermission(token, repo, username string) (bool, error) {
+	// Parse owner/repo
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 {
+		return false, fmt.Errorf("invalid repo format: %s (expected owner/repo)", repo)
+	}
+	owner, repoName := parts[0], parts[1]
+
+	// Call GitHub API to check user permission
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/collaborators/%s/permission", owner, repoName, username)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to check permission: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// If user is not a collaborator, return false
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("GitHub API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Permission string `json:"permission"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Check if user has write permission (admin, write, or maintain)
+	hasWritePermission := result.Permission == "admin" || result.Permission == "write" || result.Permission == "maintain"
+	return hasWritePermission, nil
 }

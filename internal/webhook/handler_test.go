@@ -430,7 +430,11 @@ func TestHandleWebhook_IssueComment_PermissionDenied(t *testing.T) {
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
 	dispatcher := &mockDispatcher{}
-	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &stubAuthProvider{owner: "installer-user"})
+	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &mockAppAuth{
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return username == "installer-user", nil
+		},
+	})
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(payload))
 	req.Header.Set("X-Hub-Signature-256", signature)
@@ -480,7 +484,11 @@ func TestHandleWebhook_IssueComment_FailOpenOnAuthError(t *testing.T) {
 			return nil
 		},
 	}
-	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &stubAuthProvider{err: errors.New("boom")})
+	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &mockAppAuth{
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return false, errors.New("boom")
+		},
+	})
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(payload))
 	req.Header.Set("X-Hub-Signature-256", signature)
@@ -606,7 +614,11 @@ func TestHandleWebhook_IssueComment_QueueClosed(t *testing.T) {
 			return ErrQueueClosed
 		},
 	}
-	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &stubAuthProvider{owner: "installer-user"})
+	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &mockAppAuth{
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return username == "installer-user", nil
+		},
+	})
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(payload))
 	req.Header.Set("X-Hub-Signature-256", signature)
@@ -767,7 +779,11 @@ func TestHandleWebhook_ReviewComment_PermissionDenied(t *testing.T) {
 	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
 	dispatcher := &mockDispatcher{}
-	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &stubAuthProvider{owner: "installer"})
+	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &mockAppAuth{
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return username == "installer", nil
+		},
+	})
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(payload))
 	req.Header.Set("X-Hub-Signature-256", signature)
@@ -1043,7 +1059,11 @@ func TestHandleWebhook_ReviewComment_DefaultBranchFallback(t *testing.T) {
 			return nil
 		},
 	}
-	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &stubAuthProvider{owner: "reviewer"})
+	handler := NewHandler(secret, triggerKeyword, dispatcher, nil, &mockAppAuth{
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return username == "reviewer", nil
+		},
+	})
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(payload))
 	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
@@ -1301,6 +1321,7 @@ func (r *errorReader) Read(p []byte) (int, error) {
 type mockAppAuth struct {
 	GetInstallationTokenFunc func(repo string) (*github.InstallationToken, error)
 	GetInstallationOwnerFunc func(repo string) (string, error)
+	CheckUserPermissionFunc func(repo, username string) (bool, error)
 }
 
 func (m *mockAppAuth) GetInstallationToken(repo string) (*github.InstallationToken, error) {
@@ -1315,4 +1336,12 @@ func (m *mockAppAuth) GetInstallationOwner(repo string) (string, error) {
 		return m.GetInstallationOwnerFunc(repo)
 	}
 	return "testuser", nil
+}
+
+func (m *mockAppAuth) CheckUserPermission(repo, username string) (bool, error) {
+	if m != nil && m.CheckUserPermissionFunc != nil {
+		return m.CheckUserPermissionFunc(repo, username)
+	}
+	// Default behavior: allow all users (for backward compatibility)
+	return true, nil
 }

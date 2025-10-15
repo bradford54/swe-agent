@@ -24,6 +24,14 @@ func (s *stubAuthProvider) GetInstallationOwner(repo string) (string, error) {
 	return s.owner, nil
 }
 
+func (s *stubAuthProvider) CheckUserPermission(repo, username string) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	// For testing: allow users that match the owner
+	return username == s.owner, nil
+}
+
 func TestHandlerVerifyPermission(t *testing.T) {
 	t.Run("no auth provider allows all", func(t *testing.T) {
 		h := &Handler{}
@@ -32,17 +40,17 @@ func TestHandlerVerifyPermission(t *testing.T) {
 		}
 	})
 
-	t.Run("matching installer passes", func(t *testing.T) {
-		h := &Handler{appAuth: &stubAuthProvider{owner: "installer"}}
-		if !h.verifyPermission("owner/repo", "installer") {
-			t.Fatal("expected permission check to pass for installer")
+	t.Run("user with write permission passes", func(t *testing.T) {
+		h := &Handler{appAuth: &stubAuthProvider{owner: "authorized-user"}}
+		if !h.verifyPermission("owner/repo", "authorized-user") {
+			t.Fatal("expected permission check to pass for user with write permission")
 		}
 	})
 
-	t.Run("mismatched installer fails", func(t *testing.T) {
-		h := &Handler{appAuth: &stubAuthProvider{owner: "installer"}}
-		if h.verifyPermission("owner/repo", "contributor") {
-			t.Fatal("expected permission check to fail for non-installer")
+	t.Run("user without write permission fails", func(t *testing.T) {
+		h := &Handler{appAuth: &stubAuthProvider{owner: "authorized-user"}}
+		if h.verifyPermission("owner/repo", "unauthorized-user") {
+			t.Fatal("expected permission check to fail for user without write permission")
 		}
 	})
 

@@ -51,6 +51,11 @@ func (s *stubAuth) GetInstallationOwner(repo string) (string, error) {
 	return "installer", nil
 }
 
+func (s *stubAuth) CheckUserPermission(repo, username string) (bool, error) {
+	// For integration tests: allow all users
+	return true, nil
+}
+
 func TestDispatcherExecutorProviderIntegration(t *testing.T) {
 	store := taskstore.NewStore()
 	provider := &stubProvider{

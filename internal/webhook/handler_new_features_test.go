@@ -53,10 +53,10 @@ func TestHandler_PermissionVerification(t *testing.T) {
 			// Reset dispatcher
 			dispatcher.lastTask = nil
 
-			// Setup mock auth with specific installer
+			// Setup mock auth with specific permission check
 			mockAuth := &mockAppAuth{
-				GetInstallationOwnerFunc: func(repo string) (string, error) {
-					return tt.installerUser, nil
+				CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+					return username == tt.installerUser, nil
 				},
 			}
 
@@ -119,8 +119,8 @@ func TestHandler_PermissionVerification_AuthError(t *testing.T) {
 
 	// Mock auth that returns error
 	mockAuth := &mockAppAuth{
-		GetInstallationOwnerFunc: func(repo string) (string, error) {
-			return "", fmt.Errorf("mock auth error") // Simulate error
+		CheckUserPermissionFunc: func(repo, username string) (bool, error) {
+			return false, fmt.Errorf("mock auth error") // Simulate error
 		},
 	}
 

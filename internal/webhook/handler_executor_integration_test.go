@@ -66,6 +66,11 @@ func (a *fakeAuth) GetInstallationOwner(repo string) (string, error) {
 	return a.owner, nil
 }
 
+func (a *fakeAuth) CheckUserPermission(repo, username string) (bool, error) {
+	// For integration tests: allow all users
+	return true, nil
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 

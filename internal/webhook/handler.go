@@ -279,7 +279,7 @@ func (h *Handler) generateTaskID(repo string, number int) string {
 }
 
 // verifyPermission checks if the user has permission to trigger tasks
-// Returns true if user is the GitHub App installer
+// Returns true if user has write permission to the repository
 func (h *Handler) verifyPermission(repo, username string) bool {
 	if h.appAuth == nil {
 		// No auth provider, allow all (for testing)
@@ -287,21 +287,20 @@ func (h *Handler) verifyPermission(repo, username string) bool {
 		return true
 	}
 
-	// Get the installation owner
-	owner, err := h.appAuth.GetInstallationOwner(repo)
+	// Check if user has write permission to the repository
+	hasPermission, err := h.appAuth.CheckUserPermission(repo, username)
 	if err != nil {
-		log.Printf("Warning: Failed to get installation owner: %v (allowing request)", err)
+		log.Printf("Warning: Failed to check user permission: %v (allowing request)", err)
 		// On error, allow the request (fail-open for robustness)
 		return true
 	}
 
-	// Check if user matches the installer
-	if username != owner {
-		log.Printf("Permission check failed: user=%s, installer=%s", username, owner)
+	if !hasPermission {
+		log.Printf("Permission check failed: user=%s does not have write permission to repo=%s", username, repo)
 		return false
 	}
 
-	log.Printf("Permission check passed: user=%s is the installer", username)
+	log.Printf("Permission check passed: user=%s has write permission to repo=%s", username, repo)
 	return true
 }
 
