@@ -8,19 +8,29 @@ import (
 )
 
 func withGitHubTokenEnv(token string, fn func() error) error {
-	oldToken, hadToken := os.LookupEnv("GITHUB_TOKEN")
+	// Preserve original env values
+	oldGitHubToken, hadGitHubToken := os.LookupEnv("GITHUB_TOKEN")
+	oldGhToken, hadGhToken := os.LookupEnv("GH_TOKEN")
 
+	// Set both variables for gh CLI compatibility
 	if token != "" {
 		_ = os.Setenv("GITHUB_TOKEN", token)
+		_ = os.Setenv("GH_TOKEN", token)
 	} else {
 		_ = os.Unsetenv("GITHUB_TOKEN")
+		_ = os.Unsetenv("GH_TOKEN")
 	}
 
 	defer func() {
-		if hadToken {
-			_ = os.Setenv("GITHUB_TOKEN", oldToken)
+		if hadGitHubToken {
+			_ = os.Setenv("GITHUB_TOKEN", oldGitHubToken)
 		} else {
 			_ = os.Unsetenv("GITHUB_TOKEN")
+		}
+		if hadGhToken {
+			_ = os.Setenv("GH_TOKEN", oldGhToken)
+		} else {
+			_ = os.Unsetenv("GH_TOKEN")
 		}
 	}()
 
