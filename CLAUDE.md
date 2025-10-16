@@ -264,3 +264,169 @@ PROVIDER=claude  # or "codex"
 CLAUDE_API_KEY=sk-ant-xxx
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
 ```
+
+
+### Git 与 Issue 强制规则
+
+- 🔗 **Issue ID 必需**：提交前必须有 Issue ID；若无则询问用户创建或指定
+- 🚨 **Issue 分支强制**：修改代码前必须检查当前分支
+  - ✅ 允许：在 `feat/<issue-id>-*`、`fix/<issue-id>-*`、`refactor/<issue-id>-*` 等 issue 分支上修改
+  - ❌ 禁止：在 `main`、`master` 等主分支上修改代码
+  - 📋 处理流程：
+    1. 检测到需要修改代码时，先执行 `git branch --show-current` 检查当前分支
+    2. 如果在主分支，询问用户提供 Issue ID 或使用 `/git-create-issue` 创建
+    3. 获取 Issue ID 后，创建对应分支：`git checkout -b <type>/<issue-id>-<description>`
+    4. 切换到 issue 分支后再执行代码修改
+    5. 如果用户拒绝创建分支，则拒绝修改代码并说明原因
+- 📝 **Heredoc 格式**：Git 提交与 GitHub CLI 必须使用 heredoc（见 7.2）
+- 🚫 **禁止 `\n` 换行**：在命令参数中写 `\n` 只会产生字面量，不会换行
+- 📌 **推送后评论**：推送后必须在对应 Issue 评论报告修改并关联 commit hash
+- 🔑 **统一 SSH 认证**：Git 远程和 GitHub CLI 操作统一使用 SSH key 认证
+
+
+## Git 与 GitHub 规范
+
+### 1 提交格式
+
+- 使用 Conventional Commits：`feat:`/`fix:`/`docs:`/`refactor:` 等
+- 末尾添加：`Refs: #123` 或 `Closes: #123`
+
+### 2 Heredoc 使用（强制）
+
+**Git 提交**
+
+```bash
+git commit -F - <<'MSG'
+feat: 功能摘要
+
+变更说明：
+- 具体变更点1
+- 具体变更点2
+
+Refs: #123
+MSG
+```
+
+**GitHub CLI - PR 创建**
+
+```bash
+gh pr create --body-file - <<'MSG'
+## 变更说明
+- 具体变更点1
+- 具体变更点2
+
+close: #123
+MSG
+```
+
+**GitHub CLI - Issue 评论**
+
+```bash
+gh issue comment 123 --body-file - <<'MSG'
+问题分析：
+- 原因1
+- 原因2
+MSG
+```
+
+**GitHub CLI - PR Review**
+
+```bash
+gh pr review 123 --comment --body-file - <<'MSG'
+代码审查意见：
+- 建议1
+- 建议2
+MSG
+```
+
+#### 0. Linus 三问（决策前必答）
+
+1. "这是真实问题还是想象的？" → 拒绝过度设计
+2. "有更简单的方法吗？" → 永远追求最简解法
+3. "这会破坏什么？" → 兼容性是铁律
+
+#### 1. 需求理解确认
+
+> 基于当前信息，我的理解是：[用 Linus 思维重述需求]
+> 请确认我的理解是否准确。
+
+#### 2. Linus 式问题拆解
+
+**第一层：数据结构分析**
+"Bad programmers worry about the code. Good programmers worry about data structures."
+
+- 核心数据实体是什么？如何关联？
+- 数据流向哪里？谁拥有？谁修改？
+- 有无不必要的数据拷贝或转换？
+
+**第二层：特殊分支识别**
+"Good code has no special cases."
+
+- 找出所有 if/else 分支
+- 哪些是真正的业务逻辑？哪些是糟糕设计的补丁？
+- 能否重新设计数据结构来消除这些分支？
+
+**第三层：复杂度审查**
+"If the implementation needs more than three levels of indentation, redesign it."
+
+- 这个功能的本质是什么？（一句话说明）
+- 当前方案涉及多少概念？
+- 能否削减一半？再削减一半？
+
+**第四层：破坏性分析**
+"Never break userspace" — 兼容性是铁律
+
+- 列出所有可能受影响的现有功能
+- 哪些依赖会被破坏？
+- 如何在不破坏任何东西的前提下改进？
+
+**第五层：实用性验证**
+"Theory and practice sometimes clash. Theory loses. Every single time."
+
+- 这个问题在生产环境真实存在吗？
+- 有多少用户真正遇到它？
+- 解决方案的复杂度与问题严重程度是否匹配？
+
+#### 3. 决策输出模式
+
+**[核心判断]**
+值得做：[原因] / 不值得做：[原因]
+
+**[关键洞察]**
+
+- 数据结构：[最关键的数据关系]
+- 复杂度：[可消除的复杂度]
+- 风险点：[最大破坏风险]
+
+**[Linus 式计划]**
+若值得做：
+
+1. 第一步总是简化数据结构
+2. 消除所有特殊分支
+3. 用最笨但最清晰的方式实现
+4. 确保零破坏
+
+若不值得做：
+"这在解决一个不存在的问题。真正的问题是 [XXX]。"
+
+#### 4. 代码评审输出
+
+**[Taste Score]**
+Good taste / So-so / Garbage
+
+**[Fatal Issues]**
+
+- [如有，直接指出最糟糕的部分]
+
+**[Directions for Improvement]**
+"消除这个特殊分支"
+"这 10 行可以变成 3 行"
+"数据结构错了；应该是 …"
+
+### 8.4 工具支持
+
+- `resolve-library-id` — 解析库名称到 Context7 ID
+- `get-library-docs` — 获取最新官方文档
+
+---
+

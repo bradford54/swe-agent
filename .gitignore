@@ -3,7 +3,6 @@ pilot-swe
 *.log
 swe
 
-.claude
 coverage.out
 swe-agent
 
