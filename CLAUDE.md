@@ -76,9 +76,34 @@ docker run -d -p 8000:8000 \
   swe-agent
 ```
 
+## Product Positioning
+
+**SWE-Agent is a bridge service**, not a full AI Agent.
+
+**What we do**:
+- ✅ Listen to GitHub webhooks and parse `/code` commands
+- ✅ Aggregate context (Issue/PR history) and pass to AI CLI
+- ✅ Call `codex` / `claude` CLI directly (no custom prompt engineering)
+- ✅ Detect file changes, commit, push to branches
+- ✅ Generate PR compare links (user manually creates PR)
+- ✅ Real-time progress updates to GitHub comments
+
+**What we DON'T do**:
+- ❌ Implement AI capabilities (handled by Claude Code/Codex)
+- ❌ Complex multi-stage workflows (`/clarify`, `/prd`, `/code-review`)
+- ❌ Custom prompt templates (pass user instructions directly)
+- ❌ Auto-create PRs (generate compare link, user confirms)
+
+**Responsibilities delegated to Claude Code/Codex**:
+- ✅ Requirement clarification (AI asks questions)
+- ✅ Code quality checks (AI decides whether to lint/test)
+- ✅ Multi-turn conversation & context understanding
+- ✅ Code review & refactoring suggestions
+- ✅ Documentation updates & PR descriptions
+
 ## Architecture Overview
 
-Pilot SWE is a GitHub App webhook service that responds to `/code` commands in issue comments to automatically generate and commit code changes.
+SWE-Agent is a GitHub App webhook service that bridges GitHub and AI CLIs via `/code` commands.
 
 ### Request Flow
 
@@ -89,7 +114,7 @@ GitHub Webhook (issue_comment event)
       ↓
   Executor (orchestrate task)
       ↓
-  Provider (AI code generation)
+  Provider (call Codex/Claude CLI)
       ↓
   GitHub Operations (clone, commit, push)
       ↓
@@ -106,12 +131,12 @@ GitHub Webhook (issue_comment event)
 
 #### 2. Provider System (`internal/provider/`)
 
-- **provider.go**: Interface definition for AI backends
+- **provider.go**: Interface definition for AI CLI backends
 - **factory.go**: Provider factory pattern for instantiation
-- **claude/**: Claude Code implementation
-- **codex/**: Codex implementation (multi-provider support)
+- **claude/**: Claude Code CLI wrapper
+- **codex/**: Codex CLI wrapper
 
-Provider interface enables zero-branch polymorphism:
+**Key Design**: Provider is a thin wrapper around CLI tools, not a custom AI implementation:
 
 ```go
 type Provider interface {
@@ -119,6 +144,13 @@ type Provider interface {
     Name() string
 }
 ```
+
+**Implementation Strategy**:
+- Call external CLI (`codex` or `claude` command)
+- Pass user instructions and aggregated context as-is
+- No custom prompt templates or engineering
+- Capture CLI output and parse file changes
+- All AI logic handled by the CLI itself
 
 #### 3. Task Executor (`internal/executor/`)
 
@@ -203,12 +235,24 @@ if err != nil {
 
 ### CLI Tool Dependencies
 
-This project delegates Git operations to CLI tools rather than reimplementing them:
+**Core Philosophy**: Delegate to existing tools instead of reimplementing them.
 
-- **`gh` CLI**: All GitHub operations (clone, comment, PR)
-- **`claude` CLI**: AI code generation via lancekrogers/claude-code-go
+This project depends on external CLIs for all major operations:
 
-Ensure both CLIs are installed and available in PATH.
+- **`gh` CLI**: All GitHub operations (clone, comment, PR link generation)
+- **`codex` CLI**: Codex AI code generation (when using Codex provider)
+- **`claude` CLI**: Claude Code AI code generation (when using Claude provider)
+
+**Why CLIs instead of libraries**:
+- ✅ **Don't reinvent the wheel** - Claude Code/Codex already have powerful capabilities
+- ✅ **Simpler architecture** - Just call commands, no complex AI integration
+- ✅ **Easier updates** - Upgrade CLI versions independently
+- ✅ **Better separation of concerns** - Bridge service vs AI logic
+
+**Installation Requirements**:
+- Ensure CLIs are installed and available in PATH
+- For Docker deployments, CLIs are baked into the container image
+- See Dockerfile for CLI installation steps
 
 ## Code Conventions
 
@@ -252,18 +296,31 @@ Ensure both CLIs are installed and available in PATH.
 
 ## Multi-Provider Support
 
-Current providers:
+Current providers (all via CLI):
 
-- **Claude**: Via `lancekrogers/claude-code-go` SDK
-- **Codex**: Via Codex provider implementation
+- **Codex**: Calls `codex` CLI command (recommended)
+- **Claude**: Calls `claude` CLI command via lancekrogers/claude-code-go
 
 Provider selection via environment variable:
 
 ```bash
-PROVIDER=claude  # or "codex"
-CLAUDE_API_KEY=sk-ant-xxx
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+# Option 1: Codex (Recommended)
+PROVIDER=codex
+CODEX_MODEL=gpt-5-codex
+# OPENAI_API_KEY=your-key  # Optional, Codex CLI handles this
+
+# Option 2: Claude
+PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-xxx
+CLAUDE_MODEL=claude-sonnet-4-5-20250929
 ```
+
+**Adding a new provider**:
+1. Implement Provider interface in `internal/provider/<name>/`
+2. Create CLI wrapper (call external command, parse output)
+3. Add case in `factory.go` NewProvider() function
+4. Add config fields in `internal/config/config.go`
+5. No changes to executor or handler needed
 
 
 ### Git 与 Issue 强制规则

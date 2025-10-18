@@ -1,9 +1,26 @@
 # Repository Guidelines
 
+## Product Positioning
+
+**SWE-Agent is a bridge service**, not a full AI Agent.
+
+We focus on:
+- ✅ Bridging GitHub webhooks with AI CLIs (Codex/Claude Code)
+- ✅ Aggregating context and passing to external AI tools
+- ✅ Managing repository operations (clone, commit, push)
+- ✅ Providing reliable task queuing and progress tracking
+
+We explicitly DO NOT:
+- ❌ Implement custom AI logic or prompt engineering
+- ❌ Build multi-stage workflows (`/clarify`, `/prd`, `/code-review`)
+- ❌ Auto-create PRs (we generate compare links for user confirmation)
+
+All AI capabilities (code generation, quality checks, reviews) are delegated to Claude Code/Codex CLIs.
+
 ## Project Structure & Module Organization
 - `cmd/` holds the HTTP server entry point; compiled binary name is `swe-agent`.
 - `internal/` contains production code grouped by responsibility (e.g., `webhook/`, `executor/`, `github/`, `provider/`).
-- `internal/provider/claude` and `internal/provider/codex` host AI integrations; keep shared logic in `internal/provider`.
+- `internal/provider/claude` and `internal/provider/codex` are **CLI wrappers** (not custom AI implementations); keep shared interface logic in `internal/provider`.
 - Tests live beside source files; golden data resides under `internal/github` fixtures.
 
 ## Build, Test, and Development Commands
