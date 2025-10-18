@@ -1059,7 +1059,11 @@ func TestExecutor_Execute_ResponseOnlyFlow(t *testing.T) {
 		},
 	}
 
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	executor := NewWithClient(mockProvider, mockAuth, mockGH)
 	executor.WithStore(store)
 	executor.cloneFn = func(repo, branch, token string) (string, func(), error) {
@@ -1081,7 +1085,17 @@ func TestExecutor_Execute_ResponseOnlyFlow(t *testing.T) {
 	}
 
 	t.Setenv("DEBUG_GIT_DETECTION", "true")
-	store.Create(&taskstore.Task{ID: task.ID})
+	if err := store.Create(&taskstore.Task{
+		ID:          task.ID,
+		Title:       "Analysis",
+		Status:      taskstore.StatusPending,
+		RepoOwner:   "owner",
+		RepoName:    "repo",
+		IssueNumber: task.Number,
+		Actor:       task.Username,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
 
 	if err := executor.Execute(context.Background(), task); err != nil {
 		t.Fatalf("Execute() returned unexpected error: %v", err)
@@ -1145,7 +1159,11 @@ func TestExecutor_Execute_SinglePRWorkflow(t *testing.T) {
 	}
 
 	mockAuth := &mockAppAuth{}
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	executor := NewWithClient(mockProvider, mockAuth, mockGH)
 	executor.WithStore(store)
 	executor.cloneFn = func(repo, branch, token string) (string, func(), error) {
@@ -1170,7 +1188,17 @@ func TestExecutor_Execute_SinglePRWorkflow(t *testing.T) {
 		Username: "builder",
 	}
 
-	store.Create(&taskstore.Task{ID: task.ID})
+	if err := store.Create(&taskstore.Task{
+		ID:          task.ID,
+		Title:       task.Prompt,
+		Status:      taskstore.StatusPending,
+		RepoOwner:   "owner",
+		RepoName:    "repo",
+		IssueNumber: task.Number,
+		Actor:       task.Username,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
 
 	if err := executor.Execute(context.Background(), task); err != nil {
 		t.Fatalf("Execute() failed: %v", err)
@@ -1235,8 +1263,14 @@ func TestExecutor_ExecuteMultiPR_CreatesAndSkips(t *testing.T) {
 	mockGH := github.NewMockGHClient()
 	mockGH.UpdateCommentFunc = func(repo string, commentID int, body, token string) error { return nil }
 
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
 	executor := NewWithClient(&mockProvider{name: "multi"}, &mockAppAuth{}, mockGH)
-	executor.WithStore(taskstore.NewStore())
+	executor.WithStore(store)
 
 	task := &webhook.Task{
 		ID:       "multi",
@@ -1992,7 +2026,11 @@ func TestExecutor_Execute_ProviderGenerateError_WithMockClone(t *testing.T) {
 
 func TestExecutor_WithStore(t *testing.T) {
 	executor := New(&mockProvider{}, nil)
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 
 	if executor.WithStore(store) != executor {
 		t.Fatal("WithStore should return the executor instance for chaining")
@@ -2003,10 +2041,24 @@ func TestExecutor_WithStore(t *testing.T) {
 }
 
 func TestExecutor_UpdateStatusAndAddLog(t *testing.T) {
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	executor := New(&mockProvider{}, nil).WithStore(store)
 
-	store.Create(&taskstore.Task{ID: "task-1"})
+	if err := store.Create(&taskstore.Task{
+		ID:          "task-1",
+		Title:       "Test",
+		Status:      taskstore.StatusPending,
+		RepoOwner:   "owner",
+		RepoName:    "repo",
+		IssueNumber: 1,
+		Actor:       "user",
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
 	task := &webhook.Task{ID: "task-1"}
 
 	executor.updateStatus(task, taskstore.StatusRunning)
@@ -2019,6 +2071,11 @@ func TestExecutor_UpdateStatusAndAddLog(t *testing.T) {
 	}
 
 	executor.addLog(task, "info", "hello %s", "world")
+	// 重新获取 task 以获取最新的日志（SQLite 持久化）
+	stored, ok = store.Get("task-1")
+	if !ok {
+		t.Fatal("Expected task to exist in store after addLog")
+	}
 	if len(stored.Logs) != 1 {
 		t.Fatalf("Expected 1 log entry, got %d", len(stored.Logs))
 	}
