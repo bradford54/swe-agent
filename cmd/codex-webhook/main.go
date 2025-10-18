@@ -37,6 +37,10 @@ func (a *fakeAuth) GetInstallationOwner(repo string) (string, error) {
 	return "tester", nil
 }
 
+func (a *fakeAuth) CheckUserPermission(repo, username string) (bool, error) {
+	return true, nil
+}
+
 type inlineDispatcher struct {
 	store    *taskstore.Store
 	exec     *executor.Executor
