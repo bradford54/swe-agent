@@ -22,8 +22,12 @@ func newTemplates(listTpl, detailTpl string, t *testing.T) *template.Template {
 }
 
 func TestNewHandler(t *testing.T) {
-	store := taskstore.NewStore()
 	tempDir := t.TempDir()
+	store, err := taskstore.NewStore(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	templatesDir := filepath.Join(tempDir, "templates")
 	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
 		t.Fatalf("failed to create templates dir: %v", err)
@@ -59,8 +63,12 @@ func TestNewHandler(t *testing.T) {
 }
 
 func TestNewHandler_TemplateParseError(t *testing.T) {
-	store := taskstore.NewStore()
 	tempDir := t.TempDir()
+	store, err := taskstore.NewStore(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 
 	originalWD, err := os.Getwd()
 	if err != nil {
@@ -98,7 +106,11 @@ func TestHandler_ListTasks_NoStore(t *testing.T) {
 }
 
 func TestHandler_ListTasks_TemplateError(t *testing.T) {
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	handler := &Handler{
 		store:     store,
 		templates: newTemplates("{{index .Tasks 0}}", "{{.Task.ID}}", t),
@@ -115,8 +127,14 @@ func TestHandler_ListTasks_TemplateError(t *testing.T) {
 }
 
 func TestHandler_ListTasks_Success(t *testing.T) {
-	store := taskstore.NewStore()
-	store.Create(&taskstore.Task{ID: "task-123", Title: "demo"})
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+	if err := store.Create(&taskstore.Task{ID: "task-123", Title: "demo", Status: taskstore.StatusPending, RepoOwner: "owner", RepoName: "repo", IssueNumber: 1, Actor: "user"}); err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
 
 	handler := &Handler{
 		store:     store,
@@ -152,7 +170,11 @@ func TestHandler_TaskDetail_NoStore(t *testing.T) {
 }
 
 func TestHandler_TaskDetail_NotFound(t *testing.T) {
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	handler := &Handler{
 		store:     store,
 		templates: newTemplates("ok", "{{.Task.ID}}", t),
@@ -169,8 +191,14 @@ func TestHandler_TaskDetail_NotFound(t *testing.T) {
 }
 
 func TestHandler_TaskDetail_Success(t *testing.T) {
-	store := taskstore.NewStore()
-	store.Create(&taskstore.Task{ID: "task-123", Title: "demo"})
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+	if err := store.Create(&taskstore.Task{ID: "task-123", Title: "demo", Status: taskstore.StatusPending, RepoOwner: "owner", RepoName: "repo", IssueNumber: 1, Actor: "user"}); err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
 
 	handler := &Handler{
 		store:     store,

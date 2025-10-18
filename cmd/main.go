@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/cexll/swe/internal/config"
 	"github.com/cexll/swe/internal/dispatcher"
@@ -50,8 +52,28 @@ func run(ctx context.Context, serve func(string, http.Handler) error) error {
 	log.Printf("GitHub App ID: %s", cfg.GitHubAppID)
 	log.Printf("Dispatcher workers: %d, queue size: %d, max attempts: %d", cfg.DispatcherWorkers, cfg.DispatcherQueueSize, cfg.DispatcherMaxAttempts)
 
-	// Initialize in-memory task store for UI
-	taskStore := newTaskStore()
+	// Initialize SQLite task store for UI
+	dbPath := os.Getenv("TASKSTORE_DB_PATH")
+	if dbPath == "" {
+		dbPath = "./data/tasks.db"
+	}
+
+	// Ensure data directory exists
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	taskStore, err := newTaskStore(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize task store: %w", err)
+	}
+	defer func() {
+		if err := taskStore.Close(); err != nil {
+			log.Printf("Warning: failed to close task store: %v", err)
+		}
+	}()
+
+	log.Printf("Task store initialized: %s", dbPath)
 
 	// Initialize GitHub App authentication
 	appAuth := &github.AppAuth{

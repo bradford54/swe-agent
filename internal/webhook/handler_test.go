@@ -1321,7 +1321,7 @@ func (r *errorReader) Read(p []byte) (int, error) {
 type mockAppAuth struct {
 	GetInstallationTokenFunc func(repo string) (*github.InstallationToken, error)
 	GetInstallationOwnerFunc func(repo string) (string, error)
-	CheckUserPermissionFunc func(repo, username string) (bool, error)
+	CheckUserPermissionFunc  func(repo, username string) (bool, error)
 }
 
 func (m *mockAppAuth) GetInstallationToken(repo string) (*github.InstallationToken, error) {

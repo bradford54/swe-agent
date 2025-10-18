@@ -139,7 +139,11 @@ func TestIssueWebhookEndToEndProviders(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repoDir := initGitRepo(t)
-			store := taskstore.NewStore()
+			store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+			if err != nil {
+				t.Fatalf("failed to create store: %v", err)
+			}
+			defer store.Close()
 			auth := &fakeAuth{owner: "cexll"}
 
 			mockGH := github.NewMockGHClient()
@@ -251,7 +255,11 @@ func TestIssueWebhookE2EWithDispatcher(t *testing.T) {
 	trigger := "/code"
 
 	repoDir := initGitRepo(t)
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	auth := &fakeAuth{owner: "cexll"}
 
 	finalSummary := "跨阶段梳理完成，当前仅输出分析结果。"
@@ -364,7 +372,11 @@ func TestPRReviewWebhookE2EWithDispatcher(t *testing.T) {
 	trigger := "/code"
 
 	remote, initialHash := setupRemoteWithPR(t)
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	auth := &fakeAuth{owner: "cexll"}
 
 	finalSummary := "在 feature/workflow 分支更新 README 内容并同步进度。"
@@ -546,9 +558,15 @@ func setupRemoteWithPR(t *testing.T) (string, string) {
 
 func getTaskByNumber(t *testing.T, store *taskstore.Store, number int) *taskstore.Task {
 	t.Helper()
+	// 先用 List() 找到 task ID
 	for _, task := range store.List() {
 		if task.IssueNumber == number {
-			return task
+			// 使用 Get() 获取完整的最新数据（包括状态和日志）
+			fullTask, ok := store.Get(task.ID)
+			if !ok {
+				t.Fatalf("task with ID %s not found in store", task.ID)
+			}
+			return fullTask
 		}
 	}
 	t.Fatalf("task with number %d not found in store (tasks=%d)", number, len(store.List()))

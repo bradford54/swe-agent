@@ -451,7 +451,7 @@ func (e *Executor) executeSinglePRWorkflow(
 	log.Printf("Creating PR from %s to %s", branchName, task.Branch)
 	e.addLog(task, "info", "Creating PR from %s to %s", branchName, task.Branch)
 
-    prURL, err := e.createPRLink(task.Repo, branchName, task.Branch, result.Summary)
+	prURL, err := e.createPRLink(task.Repo, branchName, task.Branch, result.Summary)
 	if err != nil {
 		if !task.IsPR || task.PRState != "open" {
 			tracker.FailTask("Create pull request")
@@ -820,57 +820,57 @@ func (e *Executor) commitAndPush(workdir, repo, branchName, commitMessage string
 		defer cleanup()
 	}
 
-    pushArgs := []string{"git", "push", "origin", branchName}
-    if isNewBranch {
-        pushArgs = []string{"git", "push", "-u", "origin", branchName}
-    }
+	pushArgs := []string{"git", "push", "origin", branchName}
+	if isNewBranch {
+		pushArgs = []string{"git", "push", "-u", "origin", branchName}
+	}
 
-    // Push with small exponential backoff for transient network issues (KISS)
-    var lastErr error
-    for attempt := 0; attempt < 3; attempt++ {
-        if attempt > 0 {
-            // 1s, 2s backoff
-            time.Sleep(time.Duration(attempt) * time.Second)
-        }
-        if err := runGitCommand(workdir, pushArgs, false); err != nil {
-            lastErr = err
-            if shouldRetryPush(err) {
-                continue
-            }
-            return err
-        }
-        lastErr = nil
-        break
-    }
-    if lastErr != nil {
-        return lastErr
-    }
+	// Push with small exponential backoff for transient network issues (KISS)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			// 1s, 2s backoff
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		if err := runGitCommand(workdir, pushArgs, false); err != nil {
+			lastErr = err
+			if shouldRetryPush(err) {
+				continue
+			}
+			return err
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return lastErr
+	}
 
 	return nil
 }
 
 // shouldRetryPush returns true for common transient network errors on git push
 func shouldRetryPush(err error) bool {
-    if err == nil {
-        return false
-    }
-    s := strings.ToLower(err.Error())
-    patterns := []string{
-        "timeout",
-        "connection refused",
-        "temporary failure",
-        "connection reset",
-        "broken pipe",
-        "no such host",
-        "network is unreachable",
-        "eof",
-    }
-    for _, p := range patterns {
-        if strings.Contains(s, p) {
-            return true
-        }
-    }
-    return false
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	patterns := []string{
+		"timeout",
+		"connection refused",
+		"temporary failure",
+		"connection reset",
+		"broken pipe",
+		"no such host",
+		"network is unreachable",
+		"eof",
+	}
+	for _, p := range patterns {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveGitIdentity() (string, string) {
@@ -1017,31 +1017,31 @@ func runGitCommand(workdir string, args []string, sensitive bool) error {
 
 // createPRLink generates a GitHub URL for creating a PR
 func (e *Executor) createPRLink(repo, head, base, title string) (string, error) {
-    // Generate GitHub compare URL that allows user to create PR with prefilled title/body
-    // Format: https://github.com/owner/repo/compare/base...head?expand=1&quick_pull=1&title=...&body=...
-    t := url.QueryEscape(strings.TrimSpace(title))
-    // KISS: reuse title as body when a separate body isn't provided by caller
-    b := t
-    prURL := fmt.Sprintf("https://github.com/%s/compare/%s...%s?expand=1&quick_pull=1&title=%s",
-        repo, url.PathEscape(base), url.PathEscape(head), t)
-    prURL = prURL + "&body=" + b
-    if _, err := url.Parse(prURL); err != nil {
-        return "", fmt.Errorf("invalid PR URL: %w", err)
-    }
-    return prURL, nil
+	// Generate GitHub compare URL that allows user to create PR with prefilled title/body
+	// Format: https://github.com/owner/repo/compare/base...head?expand=1&quick_pull=1&title=...&body=...
+	t := url.QueryEscape(strings.TrimSpace(title))
+	// KISS: reuse title as body when a separate body isn't provided by caller
+	b := t
+	prURL := fmt.Sprintf("https://github.com/%s/compare/%s...%s?expand=1&quick_pull=1&title=%s",
+		repo, url.PathEscape(base), url.PathEscape(head), t)
+	prURL = prURL + "&body=" + b
+	if _, err := url.Parse(prURL); err != nil {
+		return "", fmt.Errorf("invalid PR URL: %w", err)
+	}
+	return prURL, nil
 }
 
 // handleError updates the tracking comment with error details and returns the error
 func (e *Executor) handleError(task *webhook.Task, tracker *github.CommentTracker, token, errorMsg string) error {
-    tracker.MarkEnd()
-    tracker.SetFailed(errorMsg)
-    e.updateStatus(task, taskstore.StatusFailed)
-    e.addLog(task, "error", "%s", errorMsg)
+	tracker.MarkEnd()
+	tracker.SetFailed(errorMsg)
+	e.updateStatus(task, taskstore.StatusFailed)
+	e.addLog(task, "error", "%s", errorMsg)
 
-    // Provide actionable hints without altering the primary error message
-    for _, hint := range deriveHelpfulHints(errorMsg, task) {
-        e.addLog(task, "hint", "%s", hint)
-    }
+	// Provide actionable hints without altering the primary error message
+	for _, hint := range deriveHelpfulHints(errorMsg, task) {
+		e.addLog(task, "hint", "%s", hint)
+	}
 
 	if err := tracker.Update(token); err != nil {
 		log.Printf("Warning: Failed to update tracking comment with error: %v", err)
@@ -1075,46 +1075,46 @@ func isNonRetryableTaskError(msg string) bool {
 // deriveHelpfulHints produces non-intrusive, actionable hints for common failures.
 // It does not modify user-visible primary error text to keep tests stable.
 func deriveHelpfulHints(msg string, task *webhook.Task) []string {
-    s := strings.ToLower(strings.TrimSpace(msg))
-    if s == "" {
-        return nil
-    }
+	s := strings.ToLower(strings.TrimSpace(msg))
+	if s == "" {
+		return nil
+	}
 
-    var hints []string
+	var hints []string
 
-    // Authentication / token problems
-    if strings.Contains(s, "api error: 401") || strings.Contains(s, "invalid token") || strings.Contains(s, "authentication failed") {
-        hints = append(hints, "Check GitHub App credentials and installation: GITHUB_APP_ID, GITHUB_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET.")
-        hints = append(hints, "Ensure the App is installed on the target repository with Contents: Read & Write permissions.")
-    }
+	// Authentication / token problems
+	if strings.Contains(s, "api error: 401") || strings.Contains(s, "invalid token") || strings.Contains(s, "authentication failed") {
+		hints = append(hints, "Check GitHub App credentials and installation: GITHUB_APP_ID, GITHUB_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET.")
+		hints = append(hints, "Ensure the App is installed on the target repository with Contents: Read & Write permissions.")
+	}
 
-    // Permission denied on push/clone
-    if strings.Contains(s, "permission denied") || strings.Contains(s, "http 403") || strings.Contains(s, "403 forbidden") || strings.Contains(s, "remote: permission to") {
-        hints = append(hints, "Push permission denied: verify the App installation on this repo and branch protections.")
-        hints = append(hints, "If this is a PR from a fork, ensure the workflow/app has permission to push to the branch.")
-    }
+	// Permission denied on push/clone
+	if strings.Contains(s, "permission denied") || strings.Contains(s, "http 403") || strings.Contains(s, "403 forbidden") || strings.Contains(s, "remote: permission to") {
+		hints = append(hints, "Push permission denied: verify the App installation on this repo and branch protections.")
+		hints = append(hints, "If this is a PR from a fork, ensure the workflow/app has permission to push to the branch.")
+	}
 
-    // No credential prompt allowed (common when token injection failed)
-    if strings.Contains(s, "could not read username for 'https://github.com': terminal prompts disabled") {
-        hints = append(hints, "Token not injected into remote.pushurl. Confirm repository string is correct and pushurl configuration succeeded.")
-    }
+	// No credential prompt allowed (common when token injection failed)
+	if strings.Contains(s, "could not read username for 'https://github.com': terminal prompts disabled") {
+		hints = append(hints, "Token not injected into remote.pushurl. Confirm repository string is correct and pushurl configuration succeeded.")
+	}
 
-    // Branch/ref issues
-    if strings.Contains(s, "couldn't find remote ref") || strings.Contains(s, "src refspec") {
-        hints = append(hints, "Remote branch not found. Verify branch creation and that the correct head/base branches are used.")
-    }
+	// Branch/ref issues
+	if strings.Contains(s, "couldn't find remote ref") || strings.Contains(s, "src refspec") {
+		hints = append(hints, "Remote branch not found. Verify branch creation and that the correct head/base branches are used.")
+	}
 
-    // Network/transient errors
-    if shouldRetryPush(errors.New(s)) || strings.Contains(s, "no such host") || strings.Contains(s, "network is unreachable") {
-        hints = append(hints, "Transient network issue detected. A quick retry may succeed; check network connectivity.")
-    }
+	// Network/transient errors
+	if shouldRetryPush(errors.New(s)) || strings.Contains(s, "no such host") || strings.Contains(s, "network is unreachable") {
+		hints = append(hints, "Transient network issue detected. A quick retry may succeed; check network connectivity.")
+	}
 
-    // Generic guidance
-    if len(hints) == 0 {
-        hints = append(hints, "Review logs above for the failing step and verify GitHub permissions and branch setup.")
-    }
+	// Generic guidance
+	if len(hints) == 0 {
+		hints = append(hints, "Review logs above for the failing step and verify GitHub permissions and branch setup.")
+	}
 
-    return hints
+	return hints
 }
 
 // handleResponseOnly updates the tracking comment with AI response (no code changes)
@@ -1450,7 +1450,7 @@ func (e *Executor) executeMultiPR(
 		}
 
 		// Generate PR URL
-        prURL, _ := e.createPRLink(task.Repo, branchName, task.Branch, subPR.Name)
+		prURL, _ := e.createPRLink(task.Repo, branchName, task.Branch, subPR.Name)
 		branchURL := fmt.Sprintf("https://github.com/%s/tree/%s", task.Repo, url.PathEscape(branchName))
 
 		// Record created PR
@@ -1551,25 +1551,25 @@ func (e *Executor) commitSubPR(workdir, repo, branchName string, subPR github.Su
 		defer cleanup()
 	}
 
-    // Push with small exponential backoff for transient network issues
-    var pushErr error
-    for attempt := 0; attempt < 3; attempt++ {
-        if attempt > 0 {
-            time.Sleep(time.Duration(attempt) * time.Second)
-        }
-        if err := runGitCommand(workdir, []string{"git", "push", "-u", "origin", branchName}, false); err != nil {
-            pushErr = err
-            if shouldRetryPush(err) {
-                continue
-            }
-            return err
-        }
-        pushErr = nil
-        break
-    }
-    if pushErr != nil {
-        return pushErr
-    }
+	// Push with small exponential backoff for transient network issues
+	var pushErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		if err := runGitCommand(workdir, []string{"git", "push", "-u", "origin", branchName}, false); err != nil {
+			pushErr = err
+			if shouldRetryPush(err) {
+				continue
+			}
+			return err
+		}
+		pushErr = nil
+		break
+	}
+	if pushErr != nil {
+		return pushErr
+	}
 
 	return nil
 }

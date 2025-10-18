@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,7 +58,11 @@ func (s *stubAuth) CheckUserPermission(repo, username string) (bool, error) {
 }
 
 func TestDispatcherExecutorProviderIntegration(t *testing.T) {
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	provider := &stubProvider{
 		notify: make(chan struct{}, 1),
 	}
@@ -103,10 +108,17 @@ func TestDispatcherExecutorProviderIntegration(t *testing.T) {
 		Username:   "installer",
 	}
 
-	store.Create(&taskstore.Task{
-		ID:     task.ID,
-		Status: taskstore.StatusPending,
-	})
+	if err := store.Create(&taskstore.Task{
+		ID:          task.ID,
+		Title:       task.IssueTitle,
+		Status:      taskstore.StatusPending,
+		RepoOwner:   "owner",
+		RepoName:    "repo",
+		IssueNumber: task.Number,
+		Actor:       task.Username,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
 
 	if err := d.Enqueue(task); err != nil {
 		t.Fatalf("Enqueue() error = %v", err)

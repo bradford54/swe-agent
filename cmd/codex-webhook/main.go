@@ -115,7 +115,11 @@ func main() {
 
 	provider := codex.NewProvider(os.Getenv("OPENAI_API_KEY"), os.Getenv("OPENAI_BASE_URL"), "gpt-5-codex")
 
-	store := taskstore.NewStore()
+	store, err := taskstore.NewStore(filepath.Join(os.TempDir(), "codex-webhook-test.db"))
+	if err != nil {
+		log.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
 	auth := &fakeAuth{}
 
 	mockGH := github.NewMockGHClient()
