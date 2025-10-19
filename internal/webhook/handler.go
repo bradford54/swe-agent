@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -34,9 +36,22 @@ type Task struct {
 	PromptContext map[string]string
 }
 
+// TaskIDComponents 封装 Task ID 组成部分（支持可选字段）
+type TaskIDComponents struct {
+	Repo        string
+	IssueNumber *int // 可选：关联的 Issue 编号
+	PRNumber    *int // 可选：PR 编号
+	Timestamp   int64
+}
+
 // TaskDispatcher enqueues tasks for asynchronous execution
 type TaskDispatcher interface {
 	Enqueue(task *Task) error
+}
+
+// GitHubClient 封装 GitHub API 调用（用于查询 PR 关联的 Issue）
+type GitHubClient struct {
+	authProvider github.AuthProvider
 }
 
 // Handler handles GitHub webhook events
@@ -48,10 +63,17 @@ type Handler struct {
 	reviewDeduper  *commentDeduper
 	store          *taskstore.Store
 	appAuth        github.AuthProvider
+	githubClient   *GitHubClient // GitHub API 客户端（用于查询 PR 关联 Issue）
 }
 
 // NewHandler creates a new webhook handler
 func NewHandler(webhookSecret, triggerKeyword string, dispatcher TaskDispatcher, store *taskstore.Store, appAuth github.AuthProvider) *Handler {
+	var client *GitHubClient
+	if appAuth != nil {
+		client = &GitHubClient{authProvider: appAuth}
+		log.Println("GitHub client initialized for Task ID enrichment")
+	}
+
 	return &Handler{
 		webhookSecret:  webhookSecret,
 		triggerKeyword: triggerKeyword,
@@ -60,6 +82,7 @@ func NewHandler(webhookSecret, triggerKeyword string, dispatcher TaskDispatcher,
 		reviewDeduper:  newCommentDeduper(12 * time.Hour),
 		store:          store,
 		appAuth:        appAuth,
+		githubClient:   client,
 	}
 }
 
@@ -165,9 +188,36 @@ func (h *Handler) handleIssueComment(w http.ResponseWriter, payload []byte) {
 	prompt := buildPrompt(event.Issue.Title, event.Issue.Body, customInstruction)
 	promptSummary := buildPromptSummary(event.Issue.Title, customInstruction, isPR)
 
-	// 8. Create task
+	// 8. 构建 Task ID 组件（分层策略）
+	components := TaskIDComponents{
+		Repo:      event.Repository.FullName,
+		Timestamp: time.Now().UnixNano(),
+	}
+
+	if isPR {
+		// PR 评论：先生成 PR-only ID，Best-Effort 查询关联 Issue
+		components.PRNumber = &event.Issue.Number
+
+		// 尝试查询关联 Issue（2s 超时）
+		if h.githubClient != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			if issueNum, err := h.githubClient.GetLinkedIssue(ctx, components.Repo, event.Issue.Number); err == nil && issueNum != nil {
+				components.IssueNumber = issueNum
+				log.Printf("Task ID enrichment: Found linked issue #%d for PR #%d", *issueNum, event.Issue.Number)
+			} else if err != nil {
+				log.Printf("Warning: Failed to fetch linked issue for PR #%d: %v (continuing with PR-only ID)", event.Issue.Number, err)
+			}
+		}
+	} else {
+		// Issue 评论：直接使用 Issue 号
+		components.IssueNumber = &event.Issue.Number
+	}
+
+	// 9. Create task
 	task := &Task{
-		ID:            h.generateTaskID(event.Repository.FullName, event.Issue.Number),
+		ID:            h.generateTaskID(components),
 		Repo:          event.Repository.FullName,
 		Number:        event.Issue.Number,
 		Branch:        event.Repository.DefaultBranch,
@@ -252,8 +302,28 @@ func (h *Handler) handleReviewComment(w http.ResponseWriter, payload []byte) {
 		branch = event.Repository.DefaultBranch
 	}
 
+	// 构建 Task ID 组件（PR review 一定有 PR）
+	components := TaskIDComponents{
+		Repo:      event.Repository.FullName,
+		PRNumber:  &event.PullRequest.Number,
+		Timestamp: time.Now().UnixNano(),
+	}
+
+	// Best-Effort: 查询关联 Issue（2s 超时）
+	if h.githubClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if issueNum, err := h.githubClient.GetLinkedIssue(ctx, components.Repo, event.PullRequest.Number); err == nil && issueNum != nil {
+			components.IssueNumber = issueNum
+			log.Printf("Task ID enrichment: Found linked issue #%d for PR #%d", *issueNum, event.PullRequest.Number)
+		} else if err != nil {
+			log.Printf("Warning: Failed to fetch linked issue for PR #%d: %v (continuing with PR-only ID)", event.PullRequest.Number, err)
+		}
+	}
+
 	task := &Task{
-		ID:            h.generateTaskID(event.Repository.FullName, event.PullRequest.Number),
+		ID:            h.generateTaskID(components),
 		Repo:          event.Repository.FullName,
 		Number:        event.PullRequest.Number,
 		Branch:        branch,
@@ -277,10 +347,24 @@ func (h *Handler) handleReviewComment(w http.ResponseWriter, payload []byte) {
 	h.enqueueTask(w, task, prompt)
 }
 
-func (h *Handler) generateTaskID(repo string, number int) string {
-	timestamp := time.Now().UnixNano()
-	sanitized := strings.ReplaceAll(repo, "/", "-")
-	return fmt.Sprintf("%s-%d-%d", sanitized, number, timestamp)
+func (h *Handler) generateTaskID(components TaskIDComponents) string {
+	sanitized := strings.ReplaceAll(components.Repo, "/", "-")
+
+	var parts []string
+	parts = append(parts, sanitized)
+
+	// 按优先级添加段落：issue -> pr -> timestamp
+	if components.IssueNumber != nil {
+		parts = append(parts, fmt.Sprintf("issue-%d", *components.IssueNumber))
+	}
+
+	if components.PRNumber != nil {
+		parts = append(parts, fmt.Sprintf("pr-%d", *components.PRNumber))
+	}
+
+	parts = append(parts, fmt.Sprintf("%d", components.Timestamp))
+
+	return strings.Join(parts, "-")
 }
 
 // verifyPermission checks if the user has permission to trigger tasks
@@ -521,4 +605,69 @@ func buildPromptContextForReview(event PullRequestReviewCommentEvent, trigger st
 		"is_pr":                "true",
 		"pr_number":            strconv.Itoa(event.PullRequest.Number),
 	}
+}
+
+// GetLinkedIssue 查询 PR 关联的第一个 Issue（通过 GitHub GraphQL API）
+// 返回 Issue 编号和是否成功的标志
+// Best-Effort 策略：失败时返回 nil 而非错误
+func (c *GitHubClient) GetLinkedIssue(ctx context.Context, repo string, prNumber int) (*int, error) {
+	// 1. 获取安装 token
+	token, err := c.authProvider.GetInstallationToken(repo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get installation token: %w", err)
+	}
+
+	// 2. 构建 GraphQL 查询
+	owner, name := splitRepo(repo)
+	query := fmt.Sprintf(`
+	{
+		repository(owner: "%s", name: "%s") {
+			pullRequest(number: %d) {
+				closingIssuesReferences(first: 1) {
+					nodes {
+						number
+					}
+				}
+			}
+		}
+	}
+	`, owner, name, prNumber)
+
+	// 3. 调用 gh api graphql（复用 CLI）
+	cmd := exec.CommandContext(ctx, "gh", "api", "graphql",
+		"-f", fmt.Sprintf("query=%s", query),
+		"--header", fmt.Sprintf("Authorization: Bearer %s", token),
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh api failed: %w (output: %s)", err, output)
+	}
+
+	// 4. 解析响应
+	var result struct {
+		Data struct {
+			Repository struct {
+				PullRequest struct {
+					ClosingIssuesReferences struct {
+						Nodes []struct {
+							Number int `json:"number"`
+						} `json:"nodes"`
+					} `json:"closingIssuesReferences"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	nodes := result.Data.Repository.PullRequest.ClosingIssuesReferences.Nodes
+	if len(nodes) == 0 {
+		return nil, nil // 无关联 Issue（非错误）
+	}
+
+	issueNum := nodes[0].Number
+	return &issueNum, nil
 }
